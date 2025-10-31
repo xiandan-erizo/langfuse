@@ -55,15 +55,23 @@ const resolveHostname = async (
 
   try {
     addresses4 = await dns.resolve4(hostname);
+    logger.debug(`IPv4 DNS resolution successful for ${hostname}:`, addresses4);
   } catch (error) {
-    logger.info("IPv4 DNS resolution error:", error);
+    logger.info(`IPv4 DNS resolution failed for ${hostname}:`, error);
   }
 
   try {
     addresses6 = await dns.resolve6(hostname);
+    logger.debug(`IPv6 DNS resolution successful for ${hostname}:`, addresses6);
   } catch (error) {
-    logger.info("IPv6 DNS resolution error:", error);
+    logger.info(`IPv6 DNS resolution failed for ${hostname}:`, error);
+    // IPv6 resolution failure is common and should not prevent IPv4-based validation
   }
+
+  // Log the final result for debugging
+  logger.debug(
+    `DNS resolution result for ${hostname}: IPv4=${addresses4.length} addresses, IPv6=${addresses6.length} addresses`,
+  );
 
   return { addresses4, addresses6 };
 };
@@ -77,13 +85,17 @@ const isValidAndSecureUrl = async (urlString: string): Promise<boolean> => {
     const hostname = new URL(url).hostname;
     const ipAddresses = await resolveHostname(hostname);
 
-    // Consider unresolvable or private hostnames as invalid/unsafe
-    return (
-      (Boolean(ipAddresses.addresses4.length) &&
-        ipAddresses.addresses4.every((ip) => !isPrivateIp(ip))) ||
-      (Boolean(ipAddresses.addresses6.length) &&
-        ipAddresses.addresses6.every((ip) => !isPrivateIp(ip)))
-    );
+    // Check if we have any valid IP addresses (IPv4 or IPv6)
+    const hasValidIPv4 =
+      ipAddresses.addresses4.length > 0 &&
+      ipAddresses.addresses4.every((ip) => !isPrivateIp(ip));
+    const hasValidIPv6 =
+      ipAddresses.addresses6.length > 0 &&
+      ipAddresses.addresses6.every((ip) => !isPrivateIp(ip));
+
+    // Consider hostname valid if at least one IP version resolves to valid public addresses
+    // This allows the validation to succeed even if IPv6 resolution fails completely
+    return hasValidIPv4 || hasValidIPv6;
   } catch (error) {
     logger.info("Invalid URL:", error);
     return false;
